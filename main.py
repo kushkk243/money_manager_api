@@ -137,9 +137,10 @@ async def get_pie_data(session: SessionDep, month: int = datetime.now().month, y
     payments = session.exec(select(Payment_Database).where(Payment_Database.timestamp >= start_date, Payment_Database.timestamp<end_date)).all()
     categories = {}
     for payment in payments:
-        if payment.category not in categories:
-            categories[payment.category] = 0
-        categories[payment.category] += payment.amount
+        cat = str(payment.category).lower()
+        if cat not in categories:
+            categories[cat] = 0 
+        categories[cat] += payment.amount
     return categories
 
 @app.get("/payments/totals/{year}/{month}")
