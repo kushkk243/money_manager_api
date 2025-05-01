@@ -4,6 +4,7 @@ from database import Payment_Database
 from sqlmodel import create_engine, select, Session, SQLModel
 from typing import Annotated
 from datetime import datetime, timedelta
+from pydantic import BaseModel
 import uuid
 # Database connection
 database_file_name = "payment_db.db"
@@ -25,6 +26,9 @@ def on_startup():
     create_db_and_tables()
 
 app = FastAPI( on_startup=on_startup())
+class BudgetRequest(BaseModel):
+    budget: int
+
 monthly_budget = 10000
 # Create the database and tables
 app.add_middleware(
@@ -44,9 +48,9 @@ async def get_budget():
     return {"monthly_budget": monthly_budget}
 
 @app.post("/settings/budget")
-async def set_budget(budget: int):
+async def set_budget(budget_request: BudgetRequest):
     global monthly_budget
-    monthly_budget = budget
+    monthly_budget = budget_request.budget
     return {"message": "Budget updated", "monthly_budget": monthly_budget}
 
 @app.get("/payments/list/{time_period}")
@@ -63,6 +67,48 @@ async def get_payments(time_period: str, session: SessionDep ):
         payments = session.exec(select(Payment_Database).where(Payment_Database.timestamp > datetime.now() - timedelta(days=1))).all()
     else:
         raise HTTPException(status_code=400, detail="Invalid time period")
+    return payments
+#Get the number of days logged in total
+
+@app.get("/payments/day_count")
+async def get_payments_count(session: SessionDep):
+    payments = session.exec(select(Payment_Database)).all()
+    if not payments:
+        return {"days_logged": 0}
+    first_payment_date = min(payment.timestamp for payment in payments)
+    last_payment_date = max(payment.timestamp for payment in payments)
+    days_logged = (last_payment_date - first_payment_date).days + 1
+    return {"days_logged": days_logged}
+
+@app.get("/payments/list/{days}")
+async def get_payments_by_days(days: int, session: SessionDep):
+    payments = session.exec(select(Payment_Database).where(Payment_Database.timestamp > datetime.now() - timedelta(days=days))).all()
+    return payments
+
+@app.get("/payments/list/by_cat/{category}")
+async def get_payments_by_category(category: str, session: SessionDep):
+    payments = session.exec(select(Payment_Database).where(Payment_Database.category == category)).all()
+    return payments
+
+@app.get("/payments/list/{category}/{time_period}")
+async def get_payments_by_category_and_time_period(category: str, time_period: str, session: SessionDep):
+    if time_period == "all":
+        payments = session.exec(select(Payment_Database).where(Payment_Database.category == category)).all()
+    elif time_period == "month":
+        start_date = datetime(datetime.now().year, datetime.now().month, 1)
+        end_date = datetime(datetime.now().year, datetime.now().month + 1, 1) if datetime.now().month < 12 else datetime(datetime.now().year + 1, 1, 1)
+        payments = session.exec(select(Payment_Database).where(Payment_Database.category == category, Payment_Database.timestamp >= start_date, Payment_Database.timestamp<end_date )).all()
+    elif time_period == "week":
+        payments = session.exec(select(Payment_Database).where(Payment_Database.category == category, Payment_Database.timestamp > datetime.now() - timedelta(days=7))).all()
+    elif time_period == "day":
+        payments = session.exec(select(Payment_Database).where(Payment_Database.category == category, Payment_Database.timestamp > datetime.now() - timedelta(days=1))).all()
+    else:
+        raise HTTPException(status_code=400, detail="Invalid time period")
+    return payments
+
+@app.get("/payments/list/{category}/{days}")
+async def get_payments_by_category_and_days(category: str, days: int, session: SessionDep):
+    payments = session.exec(select(Payment_Database).where(Payment_Database.category == category, Payment_Database.timestamp > datetime.now() - timedelta(days=days))).all()
     return payments
 
 @app.post("/payments/add")
